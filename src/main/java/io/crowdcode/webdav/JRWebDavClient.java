@@ -1,9 +1,6 @@
 package io.crowdcode.webdav;
 
-import io.crowdcode.webdav.data.WebDavDirectory;
-import io.crowdcode.webdav.data.WebDavFile;
-import io.crowdcode.webdav.data.WebDavFileInputStream;
-import io.crowdcode.webdav.data.WebDavLsResult;
+import io.crowdcode.webdav.data.*;
 import org.apache.http.HttpHost;
 import org.apache.http.HttpResponse;
 import org.apache.http.auth.AuthScope;
@@ -16,15 +13,9 @@ import org.apache.http.client.methods.HttpPut;
 import org.apache.http.client.protocol.HttpClientContext;
 import org.apache.http.entity.ByteArrayEntity;
 import org.apache.http.impl.auth.BasicScheme;
-import org.apache.http.impl.client.BasicAuthCache;
-import org.apache.http.impl.client.BasicCredentialsProvider;
-import org.apache.http.impl.client.CloseableHttpClient;
-import org.apache.http.impl.client.HttpClients;
+import org.apache.http.impl.client.*;
 import org.apache.http.impl.conn.PoolingHttpClientConnectionManager;
-import org.apache.jackrabbit.webdav.DavConstants;
-import org.apache.jackrabbit.webdav.DavException;
-import org.apache.jackrabbit.webdav.MultiStatus;
-import org.apache.jackrabbit.webdav.MultiStatusResponse;
+import org.apache.jackrabbit.webdav.*;
 import org.apache.jackrabbit.webdav.client.methods.HttpMkcol;
 import org.apache.jackrabbit.webdav.client.methods.HttpOptions;
 import org.apache.jackrabbit.webdav.client.methods.HttpPropfind;
@@ -109,8 +100,7 @@ public class JRWebDavClient {
         }
 
         Set<String> allow = options.getAllowedMethods(response);
-        Set<String> complianceClasses = options.getDavComplianceClasses(response);
-        return complianceClasses;
+        return options.getDavComplianceClasses(response);
     }
 
     /**
@@ -127,18 +117,16 @@ public class JRWebDavClient {
             URI source = file.getURI();
 
             HttpGet get = new HttpGet(source);
-            CloseableHttpResponse response = client.execute(get);
-
-            int status = response.getStatusLine().getStatusCode();
-            if (status == 200) {
-
-                InputStream stream = response.getEntity().getContent();
-                result = new WebDavFileInputStream(file.getPropertiesPresent(), stream, tmp);
-
-            } else {
-                logger.error("ERROR! INSTEAD OF HTTP 200 I GOT {}", status);
-                throw new DavAccessFailedException("EXPECTED HTTP 200. GOT " + status);
-            }
+            try (CloseableHttpResponse response = client.execute(get)) {
+				int status = response.getStatusLine().getStatusCode();
+				if (status == 200) {
+					InputStream stream = response.getEntity().getContent();
+					result = new WebDavFileInputStream(file.getPropertiesPresent(), stream, tmp);
+				} else {
+					logger.error("ERROR! INSTEAD OF HTTP 200 I GOT {}", status);
+					throw new DavAccessFailedException("EXPECTED HTTP 200. GOT " + status);
+				}
+			}
         } catch (IOException e) {
             logger.error("Error while reading file", e);
         }
@@ -155,6 +143,8 @@ public class JRWebDavClient {
         WebDavLsResult result = new WebDavLsResult();
 
         DavPropertyNameSet set = new DavPropertyNameSet();
+
+        set.add(DavPropertyName.create(DavConstants.XML_RESPONSE));
         set.add(DavPropertyName.create(DavConstants.PROPERTY_DISPLAYNAME));
         set.add(DavPropertyName.create(DavConstants.PROPERTY_RESOURCETYPE));
         set.add(DavPropertyName.create(DavConstants.PROPERTY_SOURCE));
@@ -166,22 +156,33 @@ public class JRWebDavClient {
         String uri = baseUri.toString() + ("/" + resource).replace("//", "/");
         URI baseURI = URI.create(uri);
         HttpPropfind propfind = new HttpPropfind(uri, set, 1);
-        HttpResponse resp = this.client.execute(propfind, this.context);
-        int status = resp.getStatusLine().getStatusCode();
-        if (status / 100 != 2) {
-            throw new DavAccessFailedException(
-                    "Access to " + propfind.toString() + " failed with a non 2xx status. Status was " + status);
-        }
+		MultiStatusResponse[] responses;
+        try (CloseableHttpResponse resp = this.client.execute(propfind, this.context)) {
+			int status = resp.getStatusLine().getStatusCode();
+			if (status / 100 != 2) {
+				throw new DavAccessFailedException(
+					"Access to " + propfind.toString() + " failed with a non 2xx status. Status was " + status);
+			}
 
-        MultiStatus multistatus = propfind.getResponseBodyAsMultiStatus(resp);
-        MultiStatusResponse[] responses = multistatus.getResponses();
+			MultiStatus multistatus = propfind.getResponseBodyAsMultiStatus(resp);
+			responses = multistatus.getResponses();
+		}
+
+		/*	Obtain resource path to where we're reading from, to compare against getHref below,
+			in order to skip any "current directory" directory entries included in the
+			response, since I don't want tjhose added to my list of sub-directories.
+			I found the clue to this under "Getting a list of subresources of a resource" here
+			http://jackrabbit.apache.org/archive/wiki/JCR/WebDAV_115513525.html
+		*/
+		final String selfPath = baseURI.getPath().replace("//", "/");
 
         for (MultiStatusResponse respons : responses) {
             DavPropertySet found = respons.getProperties(200);
             DavPropertySet notfound = respons.getProperties(404);
 
             if (notfound.contains(DavPropertyName.GETCONTENTLENGTH)) {
-                result.addDirectory(new WebDavDirectory(baseURI, found));
+				if (!selfPath.equals(respons.getHref()))
+	                result.addDirectory(new WebDavDirectory(baseURI, found));
             } else {
                 result.addFile(new WebDavFile(baseURI, found));
             }

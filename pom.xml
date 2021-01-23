@@ -3,13 +3,13 @@
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
 
-    <groupId>io.crowdcode.webdav</groupId>
-    <artifactId>simple-webdav-client</artifactId>
-    <version>0.0.6</version>
+    <groupId>se.pixilab</groupId>
+    <artifactId>webdav-sync</artifactId>
+    <version>1.0</version>
     <packaging>jar</packaging>
 
-    <name>Simple WebDAV Client</name>
-    <description>Simple WebDAV abstraction making java use of Jackrabbit Lib more easy</description>
+    <name>WebDAV server-to-local-directory synchronizer</name>
+    <description>Transfers all files in a WebDAV store to local dir, with authentication</description>
 
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
@@ -46,6 +46,14 @@
             <version>5.6.2</version>
             <scope>test</scope>
         </dependency>
+
+		<!-- https://mvnrepository.com/artifact/org.slf4j/slf4j-simple -->
+		<dependency>
+		    <groupId>org.slf4j</groupId>
+		    <artifactId>slf4j-simple</artifactId>
+		    <version>1.7.28</version>
+		</dependency>
+
     </dependencies>
 
     <build>
@@ -73,6 +81,47 @@
                     </execution>
                 </executions>
             </plugin>
+
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-shade-plugin</artifactId>
+				<version>2.2</version>
+				<configuration>
+					<!--createDependencyReducedPom>true</createDependencyReducedPom-->
+					<artifactSet>
+						<excludes>
+							<exclude>module-info.java</exclude>
+						</excludes>
+					</artifactSet>
+					<filters>
+						<filter>
+							<artifact>*:*</artifact>
+							<excludes>
+								<exclude>META-INF/*.SF</exclude>
+								<exclude>META-INF/*.DSA</exclude>
+								<exclude>META-INF/*.RSA</exclude>
+							</excludes>
+						</filter>
+					</filters>
+				</configuration>
+				<executions>
+					<execution>
+						<phase>package</phase>
+						<goals>
+							<goal>shade</goal>
+						</goals>
+						<configuration>
+							<transformers>
+								<transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer" />
+								<transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
+									<mainClass>pixi.Syncronize</mainClass>
+								</transformer>
+							</transformers>
+						</configuration>
+					</execution>
+				</executions>
+			</plugin>
+
         </plugins>
     </build>
     <profiles>
