@@ -39,10 +39,10 @@ public class Syncronize {
 			PrintStream out = System.err;
 			out.println("Simple WebDAV file synchronizer, cloning from server to local files.");
 			out.println("Parameters:");
-			out.println("  url - Root on WebDAV server.");
-			out.println("  user - User name for accessing the server.");
+			out.println("  url      - Root on WebDAV server.");
+			out.println("  user     - User name for accessing the server.");
 			out.println("  password - Password for accessing the server.");
-			out.println("  path - Local filesystem path where to write the clone.");
+			out.println("  path     - Local filesystem path where to write the clone.");
 		}
 	}
 
@@ -67,13 +67,11 @@ public class Syncronize {
 				String fileName = file.getName();
 				if (!fileName.startsWith(".")) {	// Skip invisible files (often MacOS residue)
 					ZonedDateTime serverLastMod = ZonedDateTime.parse(file.getLastModified(), DateTimeFormatter.RFC_1123_DATE_TIME);
+					long serverFileSize = file.getLength();
 					Path destFile = destDir.resolve(fileName);
 					if (!Files.exists(destFile) ||
-						ZonedDateTime.ofInstant(
-							Files.getLastModifiedTime(destFile).toInstant(),
-							ZoneId.systemDefault()
-						).isBefore(serverLastMod)
-					) {
+						!sameSizeAndModTime(serverLastMod, serverFileSize, destFile)
+					) {	// New file or file has different size or last-modified-time
 						// System.out.println("COPYING " + file.getName());
 						try (InputStream webDavFileData = wc.readFile(file)) {
 							Files.copy(webDavFileData, destFile, StandardCopyOption.REPLACE_EXISTING);
@@ -89,10 +87,24 @@ public class Syncronize {
 			Object dirNameValue = dir.getPropertiesPresent().get(DavConstants.PROPERTY_DISPLAYNAME).getValue();
 			if (dirNameValue != null) {
 				String dirName = dirNameValue.toString();
-				// System.out.println("DIR " + dirName);
-				Path sub = destDir.resolve(dirName);
-				copyFiles(subPath + dirName + '/', sub);
+				if (!dirName.startsWith(".")) {    // Skip invisible directories
+					// System.out.println("DIR " + dirName);
+					Path sub = destDir.resolve(dirName);
+					copyFiles(subPath + dirName + '/', sub);
+				}
 			}
 		}
+	}
+
+	/**
+	 Return true if localFile has the specified size and last-modified-time (accurate to one second).
+	 */
+	static private boolean sameSizeAndModTime(ZonedDateTime serverLastMod, long serverFileSize, Path localFile) throws IOException {
+		ZonedDateTime fileTime = ZonedDateTime.ofInstant(
+			Files.getLastModifiedTime(localFile).toInstant(),
+			ZoneId.systemDefault()
+		);
+		return serverLastMod.toEpochSecond() == fileTime.toEpochSecond() &&
+			serverFileSize == Files.size(localFile);
 	}
 }

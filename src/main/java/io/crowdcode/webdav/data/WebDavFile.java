@@ -33,8 +33,8 @@ public class WebDavFile implements WebDavElement {
         return propertiesPresent.get(DavConstants.PROPERTY_GETCONTENTTYPE).getValue().toString();
     }
 
-    public Integer getLength() {
-        return Integer.valueOf(propertiesPresent.get(DavConstants.PROPERTY_GETCONTENTLENGTH).getValue().toString());
+    public long getLength() {
+        return Long.valueOf(propertiesPresent.get(DavConstants.PROPERTY_GETCONTENTLENGTH).getValue().toString());
     }
 
     public String getNameUrlEncoded() {
